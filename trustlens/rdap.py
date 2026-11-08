@@ -7,16 +7,19 @@ from datetime import datetime, timezone
 from .urlintel import registered_domain
 
 
-def domain_info(host, timeout=6):
+def domain_info(host, timeout=10):
     reg = registered_domain(host)
     if not re.fullmatch(r"[a-z0-9.-]+\.[a-z0-9-]{2,}", reg):
         return {"available": False}
-    try:
-        req = urllib.request.Request(f"https://rdap.org/domain/{reg}",
-                                     headers={"User-Agent": "TrustLens/1.0", "Accept": "application/rdap+json"})
-        data = json.load(urllib.request.urlopen(req, timeout=timeout))
-    except Exception as e:
-        return {"available": False, "domain": reg, "error": str(e)[:100]}
+    req = urllib.request.Request(f"https://rdap.org/domain/{reg}",
+                                 headers={"User-Agent": "TrustLens/1.0", "Accept": "application/rdap+json"})
+    for attempt in range(2):
+        try:
+            data = json.load(urllib.request.urlopen(req, timeout=timeout))
+            break
+        except Exception as e:
+            if attempt:
+                return {"available": False, "domain": reg, "error": str(e)[:100]}
     events = {e.get("eventAction"): e.get("eventDate") for e in data.get("events", [])}
     out = {"available": True, "domain": reg}
     if events.get("registration"):
