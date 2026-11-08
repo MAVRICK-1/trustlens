@@ -79,7 +79,7 @@ def _decode_unverified(der, txt):
                        "organizationName": (re.search(r"O\s*=\s*([^,\n]+)", line or "") or [None, None])[1]}
     s, i = cn(f(r"Subject:(.*)")), cn(f(r"Issuer:(.*)"))
     rd = lambda d: tuple(((k, v),) for k, v in d.items() if v)
-    sans = re.findall(r"DNS:([^,\s]+)", txt)
+    sans = re.findall(r"DNS:([^,\s]+)", txt) + re.findall(r"IP Address:([^,\s]+)", txt)
     return {"subject": rd(s), "issuer": rd(i), "subjectAltName": tuple(("DNS", d) for d in sans),
             "notBefore": f(r"Not Before:\s*(.*)"), "notAfter": f(r"Not After\s*:\s*(.*)"),
             "serialNumber": f(r"Serial Number:\s*\n?\s*([0-9a-f:]+)")}
@@ -115,9 +115,9 @@ def check_certificate(host, port=443, ct=False, timeout=8):
         cert, der, proto, cipher = _handshake(host, port, timeout, True)
     except ssl.SSLCertVerificationError as e:
         verified, err = False, e.verify_message
-    except (OSError, ssl.SSLError) as e:
-        out["error"] = f"Could not establish TLS: {e}"
-        add("high", "TLS unavailable", str(e))
+    except (OSError, ssl.SSLError, UnicodeError, ValueError) as e:
+        out["error"] = f"No HTTPS/TLS service reachable on port {port}: {str(e)[:120]}"
+        add("high", "TLS unavailable", "The site does not offer a working HTTPS connection.")
         out["score"] = SEV["high"]
         return out
     if not verified:
@@ -134,7 +134,7 @@ def check_certificate(host, port=443, ct=False, timeout=8):
         add("critical", "Certificate failed trust-chain validation", err or "unknown")
 
     subj, issuer = _name(cert.get("subject", ())), _name(cert.get("issuer", ()))
-    sans = [v for k, v in cert.get("subjectAltName", ()) if k == "DNS"]
+    sans = [v for k, v in cert.get("subjectAltName", ()) if k in ("DNS", "IP Address")]
     out.update(subject=subj.get("commonName"), issuer=issuer.get("organizationName") or issuer.get("commonName"),
                sans=sans[:20], sha256=hashlib.sha256(der).hexdigest())
     try:

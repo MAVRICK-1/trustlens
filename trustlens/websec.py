@@ -13,13 +13,23 @@ MAX_BYTES = 400_000
 SEV = {"critical": 45, "high": 25, "medium": 10, "low": 3}
 
 
-def is_public_host(host):
-    """SSRF guard: only scan hosts that resolve exclusively to public IPs."""
+ALLOWED_PORTS = (None, 80, 443, 8080, 8443)
+
+
+def host_class(host):
+    """'public', 'private' (internal/reserved address) or 'nxdomain' (does not resolve)."""
     try:
         infos = socket.getaddrinfo(host, None)
-    except (socket.gaierror, UnicodeError):
-        return False
-    return bool(infos) and all(ipaddress.ip_address(i[4][0]).is_global for i in infos)
+    except (socket.gaierror, UnicodeError, OSError):
+        return "nxdomain"
+    if not infos:
+        return "nxdomain"
+    return "public" if all(ipaddress.ip_address(i[4][0]).is_global for i in infos) else "private"
+
+
+def is_public_host(host):
+    """SSRF guard: only scan hosts that resolve exclusively to public IPs."""
+    return host_class(host) == "public"
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -68,41 +78,74 @@ def assess_web(url, timeout=8):
     def add(sev, title, detail):
         findings.append({"severity": sev, "title": title, "detail": detail})
 
-    out = {"url": url, "findings": findings, "redirects": []}
+    out = {"url": url, "findings": findings, "redirects": [], "score": 0}
     start_host = urlparse(url).hostname or ""
     cur, resp, body = url, None, b""
     opener = urllib.request.build_opener(_NoRedirect)
-    for _ in range(6):
-        host = urlparse(cur).hostname
-        if urlparse(cur).scheme not in ("http", "https") or not host or not is_public_host(host):
-            out["error"] = "Target is not a public, resolvable http(s) host (blocked for safety)."
-            out["score"] = 0
+    for hop in range(6):
+        pc = urlparse(cur)
+        try:
+            port = pc.port
+        except ValueError:
+            port = -1
+        if hop > 0:  # redirect targets are attacker-controlled: flag instead of silently failing
+            if pc.scheme not in ("http", "https"):
+                add("high", "Redirects to a non-web scheme", cur[:100])
+                break
+            if not pc.hostname or host_class(pc.hostname) == "private":
+                add("high", "Redirects to an internal/private address", (pc.hostname or "")[:100])
+                break
+        if pc.scheme not in ("http", "https") or not pc.hostname:
+            out["error"] = "Only public http(s) targets can be scanned."
             return out
-        req = urllib.request.Request(cur, headers={"User-Agent": "Mozilla/5.0 TrustLens-Scanner/1.0"})
+        if port not in ALLOWED_PORTS:
+            out["error"] = f"Port {port} is not scanned (only 80, 443, 8080, 8443)."
+            return out
+        hc = host_class(pc.hostname)
+        if hc != "public":
+            out["error"] = ("Domain does not resolve (no DNS record)." if hc == "nxdomain"
+                            else "Target resolves to a private/internal address; scan blocked.")
+            return out
+        req = urllib.request.Request(cur, headers={"User-Agent": "Mozilla/5.0 (compatible; TrustLens-Scanner/1.0)",
+                                                   "Accept": "text/html,*/*;q=0.8", "Accept-Encoding": "identity"})
         try:
             resp = opener.open(req, timeout=timeout)
         except urllib.error.HTTPError as e:
             resp = e
         except Exception as e:
-            out["error"] = f"Fetch failed: {str(e)[:150]}"
-            out["score"] = 0
+            reason = getattr(e, "reason", e)
+            out["error"] = f"Could not fetch the page: {str(reason)[:150]}"
             return out
         if resp.status in (301, 302, 303, 307, 308) and resp.headers.get("Location"):
             nxt = urljoin(cur, resp.headers["Location"])
             out["redirects"].append({"from": cur, "to": nxt, "status": resp.status})
             cur = nxt
             continue
-        body = resp.read(MAX_BYTES)
+        try:
+            body = resp.read(MAX_BYTES)
+        except Exception:
+            body = b""
         break
     else:
         add("medium", "Redirect loop / too many redirects", "Gave up after 6 hops.")
-    if resp is None:
-        out["score"] = 0
+    if resp is None or not hasattr(resp, "status"):
+        return out
+    if resp.status in (301, 302, 303, 307, 308) and not body and out["redirects"]:
+        out["final_url"], out["status"] = cur, resp.status
+        out["score"] = min(100, sum(SEV[f["severity"]] for f in findings))
         return out
     out["final_url"], out["status"] = cur, resp.status
     h = {k.lower(): v for k, v in resp.headers.items()}
     out["server"] = h.get("server")
     final_host = urlparse(cur).hostname or ""
+    if resp.status in (401, 403, 429, 503) or (resp.status >= 400 and "cloudflare" in h.get("server", "").lower()):
+        out["note"] = f"The site returned HTTP {resp.status}, likely blocking automated scanners. Page-content checks may be incomplete."
+    elif resp.status >= 400:
+        out["note"] = f"The site returned HTTP {resp.status}."
+    ctype = h.get("content-type", "").lower()
+    cdisp = h.get("content-disposition", "").lower()
+    if "attachment" in cdisp or re.search(r"application/(x-msdownload|x-msi|octet-stream|x-sh|java-archive|vnd\.android)", ctype):
+        add("high", "Link triggers a file download", f"{ctype or 'attachment'} {cdisp[:60]}")
 
     if registered_domain(final_host) != registered_domain(start_host):
         add("high", "Redirects to a different domain", f"{start_host} -> {final_host}")
@@ -134,7 +177,9 @@ def assess_web(url, timeout=8):
     if h.get("access-control-allow-origin") == "*" and h.get("access-control-allow-credentials", "").lower() == "true":
         add("high", "Permissive CORS with credentials", "")
 
-    text = body.decode("utf-8", "replace")
+    text = body.decode("utf-8", "replace") if ("html" in ctype or not ctype) else ""
+    if ctype and "html" not in ctype:
+        out["note"] = (out.get("note", "") + f" Non-HTML content ({ctype.split(';')[0]}); page-content checks skipped.").strip()
     pg = _Page()
     try:
         pg.feed(text)
