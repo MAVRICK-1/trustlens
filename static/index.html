@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>TrustLens — Check a link before you click it</title>
+<title>TrustLens: Check a link before you click it</title>
 <meta name="description" content="Free link checker: phishing patterns, TLS certificate trust, web security headers and community reports in one scan.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='14' cy='14' r='9' fill='none' stroke='%2314120f' stroke-width='3.5'/><path d='M21 21l8 8' stroke='%2314120f' stroke-width='3.5' stroke-linecap='round'/></svg>">
 <style>
@@ -84,6 +84,13 @@ table.hd td{padding:5px 0;border-top:1px solid var(--rule)}table.hd td:last-chil
 .how{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:26px}
 .how h4{font:700 18px var(--serif);margin:0 0 6px}.how p{margin:0;font-size:14px;color:#47423a}.how b{font:12px var(--mono);color:var(--mut)}
 footer{border-top:1px solid var(--ink);margin-top:40px;padding:22px 0 50px;font-size:13px;color:var(--mut)}
+.ov{display:grid;grid-template-columns:minmax(280px,1.15fr) 1fr;gap:28px;align-items:start}
+@media(max-width:760px){.ov{grid-template-columns:1fr}}
+.shot{margin:0;border:1px solid var(--ink);background:var(--paper)}.shot img{display:block;width:100%;aspect-ratio:3/2;object-fit:cover;object-position:top;background:#e6e0d1}
+.shot figcaption{font-size:11.5px;color:var(--mut);padding:8px 10px;border-top:1px solid var(--rule)}
+.bar3{display:flex;align-items:center;gap:6px;padding:7px 10px;border-bottom:1px solid var(--ink);font:11px var(--mono);color:var(--mut)}
+.bar3 i{width:9px;height:9px;border-radius:50%;border:1px solid var(--ink)}.bar3 span{margin-left:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.none2{padding:40px 16px;text-align:center;color:var(--mut);font-size:14px}
 .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:10px 18px;font-size:13px;opacity:0;pointer-events:none;transition:.25s;z-index:9}.toast.show{opacity:1}
 .fade{animation:f .45s ease both}@keyframes f{from{opacity:0;transform:translateY(8px)}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
@@ -94,13 +101,13 @@ footer{border-top:1px solid var(--ink);margin-top:40px;padding:22px 0 50px;font-
 <section class="hero">
   <p class="eyebrow">Link safety checker</p>
   <h1>Check a link <em>before</em> you click it.</h1>
-  <p class="lede">Paste any web address. TrustLens looks at the URL itself, the site’s security certificate, how the page behaves, and what other people have reported — then tells you whether to trust it.</p>
+  <p class="lede">Paste any web address. TrustLens looks at the URL itself, the site’s security certificate, how the page behaves, and what other people have reported. Then it tells you whether to trust it.</p>
   <form id="f"><input id="u" placeholder="https://example.com/login" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="2000" autofocus aria-label="URL to check"><button class="go" id="go">Check</button></form>
   <div class="ex">Examples: <button type="button" data-u="https://github.com">github.com</button><button type="button" data-u="paypa1-secure-login.xyz/verify">fake-login lookalike</button><button type="button" data-u="https://expired.badssl.com">expired certificate</button><button type="button" data-u="https://self-signed.badssl.com">self-signed</button></div>
 </section>
 <div id="out" aria-live="polite"></div>
-<section class="block" id="feed-sec"><div class="sec"><b>—</b><h2>Community reports</h2></div><div class="panel" id="feed">Loading…</div></section>
-<section class="block" id="how"><div class="sec"><b>—</b><h2>How it works</h2></div>
+<section class="block" id="feed-sec"><div class="sec"><b>Live</b><h2>Community reports</h2></div><div class="panel" id="feed">Loading…</div></section>
+<section class="block" id="how"><div class="sec"><b>Guide</b><h2>How it works</h2></div>
   <div class="how"><div><b>01</b><h4>Read the URL</h4><p>Lookalike brand names, odd characters, raw IP addresses, risky domain endings and tricks used to hide the real destination.</p></div>
   <div><b>02</b><h4>Verify the certificate</h4><p>Is the HTTPS certificate valid, current, issued to the right name, and strong enough? Cross-checked against public Certificate Transparency logs.</p></div>
   <div><b>03</b><h4>Inspect the page</h4><p>Missing security headers, hidden redirects, login forms that send passwords elsewhere, and scam wording.</p></div>
@@ -112,7 +119,7 @@ const DEFAULT_API = "https://trustlens-5yiw.onrender.com";
 const isLocal = ["localhost", "127.0.0.1", ""].includes(location.hostname);
 const API = (isLocal && new URLSearchParams(location.search).get("api")) || (location.hostname.endsWith("github.io") ? DEFAULT_API : "");
 const $ = s => document.querySelector(s);
-const esc = s => String(s ?? "–").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const esc = s => String(s ?? "n/a").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const cls = l => l === "Dangerous" ? "Bad" : l === "Suspicious" ? "Susp" : "Safe";
 const col = n => n >= 60 ? "var(--bad)" : n >= 30 ? "var(--warn)" : "var(--ok)";
 const stampText = {Dangerous: "Dangerous", Suspicious: "Suspicious", "Likely Safe": "Looks safe"};
@@ -157,11 +164,50 @@ function severityBar(all, lex) {
     <div class="legend">${Object.entries(c).map(([k, v]) => `<span><span class="sw" style="background:${SEVC[k]}"></span>${v} ${k}</span>`).join("")}<span><span class="sw" style="background:#5b5648"></span>${lex} URL signals</span></div>`;
 }
 
+function overview(r) {
+  const w = r.web || {}, o = w.overview || {}, d = r.domain || {};
+  const shotUrl = w.final_url || (w.error ? null : r.url);
+  const age = d.age_days == null ? "unknown" : d.age_days < 1 ? "today" : d.age_days < 60 ? `${d.age_days} days` : d.age_days < 730 ? `${Math.round(d.age_days / 30)} months` : `${(d.age_days / 365).toFixed(1)} years`;
+  const ageCol = d.age_days == null ? "" : d.age_days < 30 ? "no" : d.age_days < 90 ? "" : "yes";
+  const shot = shotUrl ? `<figure class="shot"><div class="bar3"><i></i><i></i><i></i><span>${esc(short(shotUrl, 48))}</span></div>
+      <img id="shotimg" alt="Preview of ${esc(r.host)}" loading="lazy" src="https://s0.wp.com/mshots/v1/${encodeURIComponent(shotUrl)}?w=900&h=600" onerror="shotFail()">
+      <figcaption>Preview rendered by a third-party service (WordPress mshots), so this site is never opened in your browser. It may take a few seconds to appear.</figcaption></figure>`
+    : `<div class="shot none2">No preview. The site couldn’t be reached for scanning.</div>`;
+  const rows = [["Title", o.site_name ? `${w.title || ""} (${o.site_name})` : w.title], ["Description", o.description], ["Final address", w.final_url],
+    ["Domain age", `<span class="${ageCol}">${age}</span>${d.registered ? ` · registered ${esc(d.registered)}` : ""}`, true], ["Registrar", d.registrar],
+    ["Server", w.server], ["Language", o.lang], ["Built with", o.generator],
+    ["On the page", o.forms != null ? `${o.forms} form${o.forms === 1 ? "" : "s"} (${o.login_forms} with password) · ${o.links} links to ${o.external_domains} other domains · ${o.scripts} external scripts` : null]]
+    .filter(x => x[1]).map(([k, v, raw]) => `<dt>${k}</dt><dd>${raw ? v : esc(short(v, 200))}</dd>`).join("");
+  return `<div class="ov">${shot}<dl class="kv" style="align-content:start">${rows || '<dt>Info</dt><dd>No page details available.</dd>'}</dl></div>`;
+}
+let shotTries = 0;
+function shotFail() { const i = $("#shotimg"); if (i && shotTries++ < 3) setTimeout(() => { i.src = i.src.split("&_=")[0] + "&_=" + shotTries; }, 4000); }
+async function loadAi(url) {
+  const box = $("#ai"); if (!box) return;
+  box.hidden = false;
+  box.innerHTML = `<div class="sec"><b>AI</b><h2>Plain-English analysis</h2></div><div class="panel"><p class="note" style="margin:0">Writing explanation…</p></div>`;
+  try {
+    const d = await fetchJson(`${API}/api/explain?url=${encodeURIComponent(url)}`, {}, 1);
+    if (!$("#ai") || last?.url !== url) return;
+    if (d.enabled === false) { box.querySelector(".panel").innerHTML = `<p class="note" style="margin:0">AI analysis isn’t enabled on this server.</p>`; return; }
+    if (d.error) { box.querySelector(".panel").innerHTML = `<p class="note" style="margin:0 0 12px">${esc(d.error)}</p><button class="btn" id="aibtn">Try again</button>`; $("#aibtn").onclick = () => loadAi(url); return; }
+    box.querySelector(".panel").innerHTML = `<p class="advice" style="max-width:none;margin:0 0 12px">${esc(d.summary)}</p>
+      ${d.scam_type && d.scam_type.toLowerCase() !== "none" ? `<span class="chip" style="margin:0 0 12px">Looks like: ${esc(d.scam_type)}</span>` : ""}
+      <div class="grid" style="gap:10px 34px"><div><b>Why</b>${(d.why || []).map(x => `<div class="f" style="grid-template-columns:14px 1fr"><span>•</span><div>${esc(x)}</div></div>`).join("")}</div>
+      <div><b>What to do</b>${(d.actions || []).map(x => `<div class="f" style="grid-template-columns:14px 1fr"><span>→</span><div>${esc(x)}</div></div>`).join("")}</div></div>
+      <p class="note" style="margin:14px 0 0">Written by AI (${esc(d.model)}) from the scan results. It can be wrong and doesn’t change the score.</p>`;
+  } catch {
+    if (!$("#ai") || last?.url !== url) return;
+    box.querySelector(".panel").innerHTML = `<p class="note" style="margin:0 0 12px">Couldn’t reach the AI service.</p><button class="btn" id="aibtn">Try again</button>`;
+    $("#aibtn").onclick = () => loadAi(url);
+  }
+}
 function render(r) {
   const c = r.certificate || {}, w = r.web || {}, k = r.community, L = r.lexical, cl = cls(r.label);
   const allF = [...(c.findings || []), ...(w.findings || [])], tot = k.malicious_reports + k.safe_reports;
-  const mod = (n, s) => `<div class="mod"><span>${n}</span><span class="t"><i style="width:${s || 0}%;background:${col(s || 0)}"></i></span><span>${s ?? "–"}</span></div>`;
+  const mod = (n, s) => `<div class="mod"><span>${n}</span><span class="t"><i style="width:${s || 0}%;background:${col(s || 0)}"></i></span><span>${s ?? "n/a"}</span></div>`;
   $("#out").innerHTML = `
+  <section class="block fade"><div class="sec"><b>Overview</b><h2>The website</h2></div><div class="panel">${overview(r)}</div></section>
   <section class="block fade"><div class="sec"><b>Result</b><h2>Report for <span style="font-family:var(--mono);font-size:17px">${esc(r.host)}</span></h2></div>
     <div class="panel"><div class="verdict"><div>
       <div class="host">${esc(r.url)}</div><div class="stamp ${cl}">${stampText[r.label]}</div>
@@ -172,9 +218,10 @@ function render(r) {
       ${r.limited ? `<div class="banner"><b>Limited check.</b> The certificate and page couldn’t be inspected (${esc(w.error || c.error)}), so this is based on the URL and community reports only.</div>` : ""}
       <div class="grid" style="margin-top:26px"><div><div class="sec" style="border:0;padding:0;margin-bottom:10px"><h2 style="font-size:17px">Risk by check</h2></div><div class="mods">${mod("URL", L.score)}${mod("Certificate", c.score)}${mod("Page security", w.score)}${mod("Community", k.score)}</div></div>
       <div><div class="sec" style="border:0;padding:0;margin-bottom:10px"><h2 style="font-size:17px">Findings by severity</h2></div>${severityBar(allF, (L.findings || []).length)}</div></div></div></section>
+  <section class="block fade" id="ai" hidden></section>
   <section class="block fade"><div class="grid">
     ${sec("01", "The URL", L.score, finds(L.findings, true))}
-    ${sec("02", "Certificate", c.score, certViz(c) + `<dl class="kv"><dt>Issuer</dt><dd>${esc(c.issuer)}</dd><dt>Subject</dt><dd>${esc(c.subject)}</dd><dt>Chain</dt><dd class="${c.chain_valid ? "yes" : "no"}">${c.chain_valid == null ? "–" : c.chain_valid ? "valid" : "INVALID"}</dd><dt>Key</dt><dd>${esc(c.key?.type)} ${c.key?.bits || ""} · ${esc(c.key?.sig_hash)}</dd><dt>Protocol</dt><dd>${esc(c.protocol)}</dd>${c.ct?.available ? `<dt>CT logs</dt><dd>${c.ct.total} certs · ${Object.keys(c.ct.issuers).length} issuers</dd>` : ""}</dl>${c.error ? `<div class="err">${esc(c.error)}</div>` : ""}${finds(c.findings)}`)}
+    ${sec("02", "Certificate", c.score, certViz(c) + `<dl class="kv"><dt>Issuer</dt><dd>${esc(c.issuer)}</dd><dt>Subject</dt><dd>${esc(c.subject)}</dd><dt>Chain</dt><dd class="${c.chain_valid ? "yes" : "no"}">${c.chain_valid == null ? "n/a" : c.chain_valid ? "valid" : "INVALID"}</dd><dt>Key</dt><dd>${esc(c.key?.type)} ${c.key?.bits || ""} · ${esc(c.key?.sig_hash)}</dd><dt>Protocol</dt><dd>${esc(c.protocol)}</dd>${c.ct?.available ? `<dt>CT logs</dt><dd>${c.ct.total} certs · ${Object.keys(c.ct.issuers).length} issuers</dd>` : ""}</dl>${c.error ? `<div class="err">${esc(c.error)}</div>` : ""}${finds(c.findings)}`)}
     ${sec("03", "The page", w.error ? null : w.score, redirectViz(w) + headerTable(w) + (w.error ? `<div class="err">${esc(w.error)}</div>` : `<dl class="kv"><dt>Title</dt><dd>${esc(short(w.title, 70))}</dd><dt>Lands on</dt><dd>${esc(w.final_url)}</dd><dt>HTTP</dt><dd>${esc(w.status)}</dd></dl>`) + (w.note ? `<div class="note">${esc(w.note)}</div>` : "") + finds(w.findings))}
     ${sec("04", "Community", null, `<div class="vote"><span>${k.malicious_reports} harmful</span><span>${k.safe_reports} vouched</span></div><div class="vbar"><i style="width:${tot ? 100 * k.malicious_reports / tot : 0}%;background:var(--bad)"></i><i style="width:${tot ? 100 * k.safe_reports / tot : 0}%;background:var(--ok)"></i></div>
       <div>${Object.entries(k.categories).map(([a, b]) => `<span class="chip">${esc(a)} ×${b}</span>`).join("")}</div>
@@ -183,12 +230,19 @@ function render(r) {
   </div></section>`;
   requestAnimationFrame(() => requestAnimationFrame(() => { const m = $("#mk"); if (m) m.style.left = `calc(${r.risk}% - 1px)`; }));
   $("#out").scrollIntoView({behavior: "smooth", block: "start"});
+  aiPrompt(r.url);
+}
+function aiPrompt(url) {
+  const box = $("#ai"); if (!box) return;
+  box.hidden = false;
+  box.innerHTML = `<div class="sec"><b>AI</b><h2>Plain-English analysis</h2></div><div class="panel"><p class="note" style="margin:0 0 12px">Optional. Sends the scan results (not the page content) to Google Gemini to write a short explanation.</p><button class="btn" id="aibtn">Explain with AI</button></div>`;
+  $("#aibtn").onclick = () => loadAi(url);
 }
 function loading(url) {
   const names = ["Reading the URL", "Checking the certificate", "Inspecting the page", "Looking up community reports"];
-  $("#out").innerHTML = `<section class="block fade"><div class="panel loading"><h3>Checking ${esc(short(url, 60))}</h3><ol>${names.map((n, i) => `<li id="st${i}">${n}</li>`).join("")}</ol><p class="note" id="wake"></p></div></section>`;
-  let i = 0; const iv = setInterval(() => { if (i > 0) $("#st" + (i - 1))?.setAttribute("class", "done"); $("#st" + i)?.setAttribute("class", "on"); if (++i > 4) clearInterval(iv); }, 1000);
-  const wk = setTimeout(() => { const e = $("#wake"); if (e) e.textContent = "The server is waking up (free hosting) — this can take up to a minute."; }, 6000);
+  $("#out").innerHTML = `<section class="block fade"><div class="panel loading"><h3>Checking ${esc(short(url, 60))}</h3><ol>${names.map((n, i) => `<li id="st${i}">${n}</li>`).join("")}</ol><div class="banner wake" id="wake" hidden></div></div></section>`;
+  let i = 0; const iv = setInterval(() => { if (i > 0) $("#st" + (i - 1))?.setAttribute("class", "done"); $("#st" + i)?.setAttribute("class", "on"); if (++i > 3) clearInterval(iv); }, 1200);
+  const wk = setTimeout(() => { const e = $("#wake"); if (e) e.hidden = false, e.innerHTML = "<b>Waking up the server.</b> It runs on free hosting and sleeps when idle, so the first scan can take up to a minute. Later scans are fast."; }, 5000);
   return () => { clearInterval(iv); clearTimeout(wk); };
 }
 async function fetchJson(url, opts, tries = 3) {
@@ -209,7 +263,7 @@ async function fetchJson(url, opts, tries = 3) {
       if (i < tries - 1) await new Promise(r => setTimeout(r, 3000));
     }
   }
-  throw new Error(lastErr?.name === "AbortError" ? "The check timed out. The site may be slow — try again." : "Couldn’t reach the TrustLens server. Check your connection and retry.");
+  throw new Error(lastErr?.name === "AbortError" ? "The check timed out. The site may be slow, so try again." : "Couldn’t reach the TrustLens server. Check your connection and retry.");
 }
 async function scan(url) {
   url = (url || "").trim();
@@ -234,7 +288,7 @@ async function report(verdict) {
   }
   try {
     await fetchJson(`${API}/api/report`, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({url: last.url, verdict, category: cat.trim().toLowerCase(), comment: cat})}, 1);
-    toast("Thanks — your report was recorded."); busy = false; scan(last.url);
+    toast("Thanks, your report was recorded."); busy = false; scan(last.url);
   } catch (e) { toast(e.message); }
 }
 async function copyJson() {

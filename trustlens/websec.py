@@ -42,6 +42,7 @@ class _Page(HTMLParser):
         super().__init__()
         self.forms, self.title, self._t, self.scripts, self.iframes = [], "", False, [], []
         self.meta_refresh = None
+        self.meta, self.links = {}, []
         self._form = None
 
     def handle_starttag(self, tag, attrs):
@@ -60,6 +61,14 @@ class _Page(HTMLParser):
             self.iframes.append({"src": a.get("src") or "", "hidden": "display:none" in style or a.get("width") == "0"})
         elif tag == "meta" and (a.get("http-equiv") or "").lower() == "refresh":
             self.meta_refresh = a.get("content")
+        elif tag == "meta":
+            key = (a.get("name") or a.get("property") or "").lower()
+            if key in ("description", "og:description", "og:site_name", "og:title", "generator") and a.get("content"):
+                self.meta.setdefault(key, a["content"].strip()[:300])
+        elif tag == "a" and a.get("href"):
+            self.links.append(a["href"])
+        elif tag == "html" and a.get("lang"):
+            self.meta["lang"] = a["lang"][:12]
 
     def handle_endtag(self, tag):
         if tag == "title":
@@ -186,6 +195,14 @@ def assess_web(url, timeout=8):
     except Exception:
         pass
     out["title"] = pg.title.strip()[:150]
+    ext_links = {urlparse(urljoin(cur, l)).hostname for l in pg.links if l.startswith(("http", "//"))} - {None, final_host}
+    out["overview"] = {
+        "description": pg.meta.get("description") or pg.meta.get("og:description"),
+        "site_name": pg.meta.get("og:site_name"), "generator": pg.meta.get("generator"), "lang": pg.meta.get("lang"),
+        "forms": len(pg.forms), "login_forms": sum(1 for f in pg.forms if f["password"]),
+        "links": len(pg.links), "external_domains": len(ext_links), "scripts": len(pg.scripts),
+        "content_type": ctype.split(";")[0] or None, "bytes_read": len(body),
+    }
     for f in pg.forms:
         if not f["password"]:
             continue

@@ -9,8 +9,9 @@ from collections import defaultdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from trustlens import intel
+from trustlens import ai, intel
 from trustlens.certcheck import check_certificate
+from trustlens.rdap import domain_info
 from trustlens.urlintel import analyze_url, parse_target
 from trustlens.websec import assess_web, host_class
 
@@ -20,6 +21,7 @@ CATEGORIES = {"phishing", "fake-job", "payment-scam", "malware", "impersonation"
 CACHE_TTL, CACHE_MAX = 300, 500
 _hits = defaultdict(list)
 _cache = {}
+_ai_cache = {}
 _busy = threading.BoundedSemaphore(int(os.environ.get("MAX_CONCURRENT_SCANS", 8)))
 _ratelock = threading.Lock()
 
@@ -45,9 +47,10 @@ def active_scan(t):
     key = t["url"]
     hit = _cache.get(key)
     if hit and time.time() - hit[0] < CACHE_TTL:
-        return hit[1], hit[2]
+        return hit[1], hit[2], hit[3]
     host = t["host"]
     cls = host_class(host)
+    domain = {"available": False}
     if cls != "public":
         msg = ("Domain does not resolve (no DNS record) - active checks skipped." if cls == "nxdomain"
                else "Private/internal address - active checks skipped.")
@@ -57,18 +60,26 @@ def active_scan(t):
         cert_port = t["port"] if t["port"] in (443, 8443) else 443
         cert = check_certificate(host, cert_port, ct=not t["is_ip"])
         web = assess_web(t["url"])
+        if not t["is_ip"]:
+            domain = domain_info(host)
     if len(_cache) >= CACHE_MAX:
         _cache.clear()
-    _cache[key] = (time.time(), cert, web)
-    return cert, web
+    _cache[key] = (time.time(), cert, web, domain)
+    return cert, web, domain
 
 
-def full_scan(raw):
+def full_scan(raw, record=True):
     t = parse_target(raw)  # ValueError -> 400
     lex = analyze_url(raw)
     res = {"url": t["url"], "host": t["host"], "lexical": lex}
     res["community"] = intel.lookup(t["host"])
-    res["certificate"], res["web"] = active_scan(t)
+    res["certificate"], res["web"], res["domain"] = active_scan(t)
+    age = res["domain"].get("age_days")
+    if age is not None and age < 90:
+        pts = 25 if age < 30 else 12
+        lex["findings"].append({"points": pts, "title": f"Domain registered only {age} day{'s' if age != 1 else ''} ago",
+                                "detail": "Most phishing domains are used within weeks of registration."})
+        lex["score"] = min(100, lex["score"] + pts)
     cert_s, web_s, lex_s = res["certificate"].get("score", 0), res["web"].get("score", 0), lex["score"]
     # Weighted fusion, but any single strong signal dominates
     risk = 0.45 * lex_s + 0.25 * cert_s + 0.30 * web_s
@@ -84,7 +95,8 @@ def full_scan(raw):
     res["label"] = label(res["risk"])
     # Flag when most evidence could not be collected, so "Likely Safe" is not over-trusted
     res["limited"] = bool(res["certificate"].get("error") and res["web"].get("error"))
-    intel.record_scan(t["host"], res["risk"], res["label"])
+    if record:
+        intel.record_scan(t["host"], res["risk"], res["label"])
     return res
 
 
@@ -150,6 +162,31 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {"ok": True}, head=head)
         if path == "/api/feed":
             return self._send(200, intel.feed(), head=head)
+        if path == "/api/explain":
+            if not ai.enabled():
+                return self._send(200, {"enabled": False})
+            if rate_limited("ai", self._ip(), 12):
+                return self._send(429, {"error": "Too many AI requests. Please wait a minute."})
+            try:
+                t = parse_target((q.get("url") or [""])[0])
+            except ValueError as e:
+                return self._send(400, {"error": str(e)})
+            hit = _ai_cache.get(t["url"])
+            if hit and time.time() - hit[0] < 600:
+                return self._send(200, hit[1])
+            if not _busy.acquire(timeout=5):
+                return self._send(503, {"error": "Server is busy. Please retry in a few seconds."})
+            try:
+                out = {"enabled": True, **ai.explain(full_scan(t["url"], record=False))}
+            except Exception:
+                traceback.print_exc()
+                return self._send(200, {"enabled": True, "error": "The AI explanation is unavailable right now."})
+            finally:
+                _busy.release()
+            if len(_ai_cache) > 300:
+                _ai_cache.clear()
+            _ai_cache[t["url"]] = (time.time(), out)
+            return self._send(200, out)
         if path == "/api/scan":
             if rate_limited("scan", self._ip()):
                 return self._send(429, {"error": "Too many scans. Please wait a minute and try again."})
