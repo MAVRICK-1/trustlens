@@ -1,6 +1,7 @@
 """Plain-English threat explanation using the Gemini API. Advisory only: never changes the risk score."""
 import json
 import os
+import urllib.error
 import urllib.request
 
 MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.1-flash-lite")
@@ -36,7 +37,7 @@ def _compact(res):
     }
 
 
-def explain(res, timeout=25):
+def explain(res, timeout=30):
     body = {
         "systemInstruction": {"parts": [{"text": SYSTEM}]},
         "contents": [{"role": "user", "parts": [{"text": "<scan_data>" + json.dumps(_compact(res)) + "</scan_data>"}]}],
@@ -44,7 +45,16 @@ def explain(res, timeout=25):
     }
     req = urllib.request.Request(URL.format(MODEL), data=json.dumps(body).encode(), method="POST",
                                  headers={"Content-Type": "application/json", "x-goog-api-key": os.environ["GEMINI_API_KEY"]})
-    data = json.load(urllib.request.urlopen(req, timeout=timeout))
+    for attempt in range(2):
+        try:
+            data = json.load(urllib.request.urlopen(req, timeout=timeout))
+            break
+        except urllib.error.HTTPError as e:
+            if attempt or e.code not in (429, 500, 503):
+                raise
+        except (TimeoutError, OSError):
+            if attempt:
+                raise
     text = data["candidates"][0]["content"]["parts"][0]["text"]
     out = json.loads(text)
     clean = lambda s, n: str(s).replace("\u2014", ",").replace("\u2013", "-")[:n]
