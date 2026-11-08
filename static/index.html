@@ -24,7 +24,7 @@ small,.m{color:var(--m)}h3{margin:0 0 8px}td{padding:2px 12px 2px 0;vertical-ali
 <script>
 // Set window.API_BASE (or edit here) to the deployed backend URL when hosting the page on GitHub Pages.
 // Backend URL: ?api=https://your-app.onrender.com (remembered in localStorage) or edit DEFAULT_API.
-const DEFAULT_API = "https://YOUR-BACKEND.onrender.com";
+const DEFAULT_API = "https://trustlens-5yiw.onrender.com";
 const qa = new URLSearchParams(location.search).get("api");
 if (qa) localStorage.setItem("api", qa.replace(/\/$/, ""));
 const API = localStorage.getItem("api") || (location.hostname.endsWith("github.io") ? DEFAULT_API : "");
