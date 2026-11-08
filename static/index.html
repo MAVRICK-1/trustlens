@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TrustLens – Web Threat Detection</title>
+<style>
+:root{--bg:#0d1117;--card:#161b22;--b:#30363d;--t:#e6edf3;--m:#8b949e;--ok:#3fb950;--w:#d29922;--bad:#f85149;--a:#58a6ff}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--t);font:15px/1.5 system-ui,sans-serif}
+main{max-width:960px;margin:0 auto;padding:24px 16px}h1{margin:0 0 4px}.sub{color:var(--m);margin-bottom:20px}
+form{display:flex;gap:8px}input{flex:1;padding:12px;border-radius:8px;border:1px solid var(--b);background:var(--card);color:var(--t);font-size:15px}
+button{padding:12px 18px;border:0;border-radius:8px;background:var(--a);color:#04121f;font-weight:600;cursor:pointer}
+button.alt{background:var(--card);color:var(--t);border:1px solid var(--b)}
+.card{background:var(--card);border:1px solid var(--b);border-radius:10px;padding:16px;margin-top:16px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}
+.gauge{font-size:44px;font-weight:700}.Safe{color:var(--ok)}.Susp{color:var(--w)}.Bad{color:var(--bad)}
+.f{padding:6px 0;border-top:1px solid var(--b)}.f:first-child{border:0}.tag{font-size:11px;padding:1px 7px;border-radius:9px;margin-right:6px;text-transform:uppercase;color:#000}
+.critical,.high{background:var(--bad)}.medium{background:var(--w)}.low{background:var(--m)}.pts{background:var(--w)}
+small,.m{color:var(--m)}h3{margin:0 0 8px}td{padding:2px 12px 2px 0;vertical-align:top}
+</style></head><body><main>
+<h1>🛡️ TrustLens</h1>
+<div class="sub">Phishing &amp; malicious-site detection · TLS certificate validation · web security assessment · community threat intel</div>
+<form id="f"><input id="u" placeholder="Paste a URL, e.g. paypa1-login.xyz/verify" required><button>Scan</button></form>
+<div id="out"></div>
+<div class="card"><h3>Community threat feed</h3><div id="feed" class="m">Loading…</div></div>
+</main>
+<script>
+// Set window.API_BASE (or edit here) to the deployed backend URL when hosting the page on GitHub Pages.
+const API = window.API_BASE || (location.hostname.endsWith("github.io") ? "https://YOUR-BACKEND.onrender.com" : "");
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const cls = l => l === "Dangerous" ? "Bad" : l === "Suspicious" ? "Susp" : "Safe";
+const finds = (a, pts) => (a || []).map(f => `<div class="f"><span class="tag ${pts ? "pts" : f.severity}">${pts ? "+" + f.points : f.severity}</span><b>${esc(f.title)}</b><br><small>${esc(f.detail)}</small></div>`).join("") || '<small>No issues found.</small>';
+
+async function scan(url) {
+  $("#out").innerHTML = '<div class="card">Scanning… (certificate, headers, content)</div>';
+  try {
+    const r = await (await fetch(`${API}/api/scan?url=${encodeURIComponent(url)}`)).json();
+    if (r.error) return $("#out").innerHTML = `<div class="card Bad">${esc(r.error)}</div>`;
+    const c = r.certificate || {}, w = r.web || {}, k = r.community;
+    $("#out").innerHTML = `
+    <div class="card"><div class="gauge ${cls(r.label)}">${r.risk}/100 · ${esc(r.label)}</div><small>${esc(r.host)}</small>
+      <div style="margin-top:10px"><button class="alt" onclick="report('malicious')">🚩 Report malicious</button> <button class="alt" onclick="report('safe')">✅ Mark safe</button></div></div>
+    <div class="grid">
+      <div class="card"><h3>URL analysis (${r.lexical.score})</h3>${finds(r.lexical.findings, true)}</div>
+      <div class="card"><h3>Certificate (${c.score ?? "–"})</h3>
+        <table><tr><td class="m">Issuer</td><td>${esc(c.issuer)}</td></tr><tr><td class="m">Subject</td><td>${esc(c.subject)}</td></tr>
+        <tr><td class="m">Chain valid</td><td>${c.chain_valid}</td></tr><tr><td class="m">Expires</td><td>${esc(c.not_after)} (${c.days_left}d)</td></tr>
+        <tr><td class="m">Key</td><td>${esc(c.key?.type)} ${c.key?.bits || ""} / ${esc(c.key?.sig_hash)}</td></tr><tr><td class="m">TLS</td><td>${esc(c.protocol)}</td></tr>
+        ${c.ct?.available ? `<tr><td class="m">CT logs</td><td>${c.ct.total} certs, ${Object.keys(c.ct.issuers).length} issuers</td></tr>` : ""}</table>
+        ${c.error ? `<div class="Bad">${esc(c.error)}</div>` : ""}${finds(c.findings)}</div>
+      <div class="card"><h3>Web security (${w.score ?? "–"})</h3>${w.error ? `<div class="Susp">${esc(w.error)}</div>` : `<small>${esc(w.title)} → ${esc(w.final_url)}</small>`}${finds(w.findings)}</div>
+      <div class="card"><h3>Community intel</h3>🚩 ${k.malicious_reports} malicious · ✅ ${k.safe_reports} safe<br>
+        ${Object.entries(k.categories).map(([a, b]) => `<span class="tag low">${esc(a)} ×${b}</span>`).join("")}
+        ${k.recent.map(x => `<div class="f"><small>${esc(x.verdict)}: ${esc(x.comment || x.category)}</small></div>`).join("")}</div>
+    </div>`;
+    window._last = r;
+  } catch (e) { $("#out").innerHTML = `<div class="card Bad">Request failed: ${esc(e.message)}</div>`; }
+  loadFeed();
+}
+async function report(verdict) {
+  const comment = verdict === "malicious" ? (prompt("Category (phishing, fake-job, payment-scam, malware):", "phishing") || "phishing") : "";
+  await fetch(`${API}/api/report`, {method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({url: window._last.url, verdict, category: comment, comment})});
+  scan(window._last.url);
+}
+async function loadFeed() {
+  try {
+    const d = await (await fetch(`${API}/api/feed`)).json();
+    $("#feed").innerHTML = `<small>${d.scans} scans · ${d.dangerous} dangerous · ${d.suspicious} suspicious</small>` +
+      (d.top_threats.map(t => `<div class="f"><b>${esc(t.host)}</b> — ${t.n} reports <small>${esc(t.cats)}</small></div>`).join("") || "<div><small>No reports yet.</small></div>");
+  } catch { $("#feed").textContent = "Feed unavailable."; }
+}
+$("#f").onsubmit = e => { e.preventDefault(); scan($("#u").value); };
+loadFeed();
+</script></body></html>
